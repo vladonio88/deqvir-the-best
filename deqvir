@@ -1,119 +1,186 @@
-# UltraChecker v22 - Fixed False Positives
+# UltraChecker v22.1 FIXED
 
-$Host.UI.RawUI.WindowTitle="UltraChecker v22"
+$Host.UI.RawUI.WindowTitle="UltraChecker v22.1"
 Clear-Host
 
-function W($t,$c="White"){Write-Host $t -ForegroundColor $c}
+function W($t,$c="White"){ Write-Host $t -ForegroundColor $c }
 
 W @"
 ╔══════════════════════════════════════╗
-║          ULTRA CHECKER v22           ║
-║       False Positive Fixed           ║
+║        ULTRA CHECKER v22.1           ║
+║      Fixed Detection Engine          ║
 ╚══════════════════════════════════════╝
 "@ Cyan
 
-$Results=@()
+$Results = New-Object System.Collections.ArrayList
+$FilesChecked = 0
+$ProcessesChecked = 0
 
-$BadNames=@(
-"fateinjector",
-"injector",
-"cheat",
-"hacks",
-"ghostclient",
-"vape",
-"horion",
-"clientinject"
+$BadNames = @(
+    "fateinjector",
+    "injector",
+    "cheat",
+    "hack",
+    "ghostclient",
+    "vape",
+    "horion",
+    "clientinject",
+    "aimassist",
+    "killaura"
 )
 
-$SafePaths=@(
-"fabric-loader",
-"fabric-resource-loader",
-"processedmods",
-"prismlauncher",
-"modrinthapp",
-"labymod",
-"forge",
-"neoforge",
-"libraries",
-"minecraft"
+$SafePaths = @(
+    "fabric-loader",
+    "fabric-resource-loader",
+    "processedmods",
+    "prismlauncher",
+    "modrinthapp",
+    "labymod",
+    "forge",
+    "neoforge",
+    "\libraries\",
+    "\versions\"
 )
 
-function IsSafe($p){
- foreach($s in $SafePaths){
-  if($p.ToLower() -like "*$s*"){return $true}
- }
- return $false
+function IsSafe($Path){
+    foreach($s in $SafePaths){
+        if($Path.ToLower().Contains($s.ToLower())){
+            return $true
+        }
+    }
+    return $false
 }
 
-function CheckFile($f){
-
- if(IsSafe $f.FullName){return}
-
- foreach($b in $BadNames){
-
-  if($f.Name.ToLower() -like "*$b*"){
-
-   $risk=80
-   $ev=@("Suspicious name: $b")
-
-   if($f.FullName -match "Downloads|Temp|AppData"){
-    $risk+=10
-    $ev+="Suspicious location"
-   }
-
-   $sig=Get-AuthenticodeSignature $f.FullName -ErrorAction SilentlyContinue
-
-   if($sig.Status -ne "Valid"){
-    $risk+=10
-    $ev+="Unsigned"
-   }
-
-   $Results += [PSCustomObject]@{
-    Name=$f.Name
-    Risk=$risk
-    Path=$f.FullName
-    Evidence=$ev -join " | "
-   }
-  }
- }
+function Add-Finding($Name,$Path,$Risk,$Evidence){
+    [void]$Results.Add([PSCustomObject]@{
+        Name=$Name
+        Risk=$Risk
+        Path=$Path
+        Evidence=$Evidence
+    })
 }
 
-W "[1] Scanning files..." Green
+function Check-File($File){
 
-$paths=@(
+    $script:FilesChecked++
+
+    if(IsSafe $File.FullName){
+        return
+    }
+
+    foreach($bad in $BadNames){
+
+        if($File.Name.ToLower().Contains($bad)){
+
+            $risk=70
+            $ev=@("Suspicious name: $bad")
+
+            if($File.FullName -match "Downloads|Temp|AppData"){
+                $risk+=10
+                $ev+="Suspicious location"
+            }
+
+            try{
+                $sig=Get-AuthenticodeSignature $File.FullName
+
+                if($sig.Status -ne "Valid"){
+                    $risk+=10
+                    $ev+="Unsigned file"
+                }
+
+            }catch{}
+
+            Add-Finding `
+            $File.Name `
+            $File.FullName `
+            $risk `
+            ($ev -join " | ")
+        }
+    }
+}
+
+
+W "[1/3] File scan..." Green
+
+$Scan=@(
 "$env:USERPROFILE\Downloads",
 "$env:USERPROFILE\Desktop",
 "$env:APPDATA",
 "$env:LOCALAPPDATA"
 )
 
-foreach($p in $paths){
- if(Test-Path $p){
-  Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue |
-  Where-Object {$_.Extension -in ".exe",".dll",".jar"} |
-  ForEach-Object {CheckFile $_}
- }
+foreach($path in $Scan){
+
+    if(Test-Path $path){
+
+        W "Scanning $path" Yellow
+
+        Get-ChildItem $path -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Extension -in ".exe",".dll",".jar"
+        } |
+        ForEach-Object {
+            Check-File $_
+        }
+    }
 }
+
+
+W "[2/3] Process scan..." Green
+
+Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+
+    $script:ProcessesChecked++
+
+    try{
+
+        if($_.Path){
+
+            foreach($bad in $BadNames){
+
+                if($_.Path.ToLower().Contains($bad)){
+
+                    Add-Finding `
+                    $_.ProcessName `
+                    $_.Path `
+                    90 `
+                    "Suspicious running process"
+
+                }
+            }
+        }
+
+    }catch{}
+}
+
+
+W "[3/3] Report..." Green
+
+$Report="$env:USERPROFILE\Desktop\UltraChecker_v22.1_Report.json"
+
+$Results |
+ConvertTo-Json -Depth 5 |
+Out-File $Report -Encoding UTF8
+
 
 W ""
-W "============== RESULT ==============" Cyan
+W "=============== RESULT ===============" Cyan
+W "Files checked: $FilesChecked" Green
+W "Processes checked: $ProcessesChecked" Green
+W "Detections: $($Results.Count)" Yellow
 
-if($Results.Count -eq 0){
- W "No suspicious files found." Green
-}
-else{
- foreach($r in $Results){
-  W ""
-  W "[HIGH] $($r.Name)" Red
-  W "Risk: $($r.Risk)/100" Yellow
-  W "Path: $($r.Path)"
-  W "Evidence: $($r.Evidence)"
- }
+
+foreach($r in ($Results | Sort-Object Risk -Descending)){
+
+    W ""
+    W "[RISK $($r.Risk)] $($r.Name)" Red
+    W "Path: $($r.Path)"
+    W "Evidence: $($r.Evidence)" Gray
 }
 
-$Results | ConvertTo-Json -Depth 5 |
-Out-File "$env:USERPROFILE\Desktop\UltraChecker_v22_Report.json"
 
 W ""
-W "Report saved on Desktop" Green
+W "Report:"
+W $Report Green
+
 pause
