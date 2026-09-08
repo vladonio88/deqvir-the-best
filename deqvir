@@ -1,257 +1,185 @@
 # ==========================================
-#        ULTRA CHEAT SCANNER v20
-#        Advanced Evidence Analyzer
+# ULTRA CHECKER v20
+# Evidence Based Detection Engine
 # ==========================================
 
 $Host.UI.RawUI.WindowTitle = "UltraChecker v20"
 
 Clear-Host
 
-# ==========================
-# COLORS
-# ==========================
-
-function Write-Color($text,$color="White"){
-    Write-Host $text -ForegroundColor $color
-}
+function Write-C($t,$c="White"){ Write-Host $t -ForegroundColor $c }
 
 function Banner {
-
-Clear-Host
-
-Write-Host "
-╔══════════════════════════════════════════════╗
-║             ULTRA CHECKER v20                ║
-║          Advanced Cheat Analyzer              ║
-║       Evidence Based Detection Engine         ║
-╚══════════════════════════════════════════════╝
-" -ForegroundColor Cyan
-
+Write-Host @"
+╔══════════════════════════════════════════╗
+║          ULTRA CHECKER v20               ║
+║      Evidence Based Analyzer              ║
+╚══════════════════════════════════════════╝
+"@ -ForegroundColor Cyan
 }
 
 Banner
 
-
-# ==========================
-# GLOBAL DATA
-# ==========================
-
-$Global:Results = @()
-
-$Global:Stats = @{
-    Files = 0
-    Processes = 0
-    Registry = 0
-    Evidence = 0
+$Results = @()
+$Stats = @{
+    Files=0
+    Processes=0
 }
 
-
-# ==========================
-# SIGNATURE DATABASE
-# ==========================
-
-$Signatures = @(
-
-@{
-    Name="Horion"
-    Type="Minecraft Client"
-    Keywords=@(
-        "horion",
-        "horion.dll",
-        "horioninjector"
-    )
-    Risk=85
-},
-
-@{
-    Name="Vape"
-    Type="Ghost Client"
-    Keywords=@(
-        "vape",
-        "vapeclient"
-    )
-    Risk=90
-},
-
-@{
-    Name="LiquidBounce"
-    Type="Minecraft Client"
-    Keywords=@(
-        "liquidbounce",
-        "lb"
-    )
-    Risk=75
-},
-
-@{
-    Name="Rise Client"
-    Type="Minecraft Client"
-    Keywords=@(
-        "riseclient",
-        "rise"
-    )
-    Risk=80
-},
-
-@{
-    Name="Generic Injector"
-    Type="Injector"
-    Keywords=@(
-        "injector",
-        "loader",
-        "mapper"
-    )
-    Risk=50
-}
-
+$Rules = @(
+    @{Name="Horion"; Words=@("horion","horioninjector"); Risk=85},
+    @{Name="Vape"; Words=@("vape","vapeclient"); Risk=90},
+    @{Name="LiquidBounce"; Words=@("liquidbounce"); Risk=75},
+    @{Name="Rise Client"; Words=@("riseclient"); Risk=80},
+    @{Name="Injector"; Words=@("injector","loader","mapper"); Risk=45}
 )
 
-
-# ==========================
-# WHITELIST
-# ==========================
-
-$Whitelist=@(
-    "Windows",
+$Ignore = @(
     "Microsoft",
+    "Windows",
     "NVIDIA",
     "AMD",
-    "Intel",
-    "Java",
-    "Minecraft Launcher"
+    "Intel"
 )
 
-
-function Is-Whitelisted($text){
-
-foreach($item in $Whitelist){
-
-    if($text -like "*$item*"){
-        return $true
+function Is-Ignore($Path){
+    foreach($x in $Ignore){
+        if($Path -match $x){return $true}
     }
-
+    return $false
 }
 
-return $false
+function Add-Finding($Name,$Path,$Score,$Info){
+    if(Is-Ignore $Path){return}
 
+    $level="LOW"
+    if($Score -ge 90){$level="CRITICAL"}
+    elseif($Score -ge 70){$level="HIGH"}
+    elseif($Score -ge 40){$level="MEDIUM"}
+
+    $script:Results += [PSCustomObject]@{
+        Name=$Name
+        Path=$Path
+        Risk=$Score
+        Level=$level
+        Evidence=$Info
+    }
 }
 
+function Scan-File($File){
 
+    $Stats.Files++
 
-# ==========================
-# RISK ENGINE
-# ==========================
+    $name=$File.Name.ToLower()
 
+    foreach($rule in $Rules){
+        foreach($word in $rule.Words){
 
-function Add-Finding {
+            if($name -like "*$word*"){
 
+                $score=$rule.Risk
+                $ev=@("Name match: $word")
 
-param(
-[string]$Name,
-[string]$Path,
-[int]$Score,
-[string[]]$Evidence
+                if($File.FullName -match "AppData|Temp|Downloads"){
+                    $score+=10
+                    $ev+="Suspicious location"
+                }
+
+                if($File.Extension -in ".exe",".dll",".jar"){
+                    $score+=5
+                    $ev+="Executable file"
+                }
+
+                Add-Finding $rule.Name $File.FullName $score ($ev -join "; ")
+            }
+        }
+    }
+}
+
+Write-C "[+] Starting scan..." Green
+
+$Folders=@(
+"$env:USERPROFILE\Desktop",
+"$env:USERPROFILE\Downloads",
+"$env:APPDATA",
+"$env:LOCALAPPDATA",
+"C:\ProgramData"
 )
 
+foreach($folder in $Folders){
 
-if(Is-Whitelisted $Path){
-    return
+    if(Test-Path $folder){
+
+        Write-C "[SCAN] $folder" Cyan
+
+        Get-ChildItem $folder -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Extension -in ".exe",".dll",".jar"
+        } |
+        ForEach-Object {
+            Scan-File $_
+        }
+    }
+}
+
+Write-C ""
+Write-C "Checking processes..." Cyan
+
+Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+
+    $Stats.Processes++
+
+    if($_.Path){
+
+        foreach($rule in $Rules){
+
+            foreach($word in $rule.Words){
+
+                if($_.Path.ToLower() -like "*$word*"){
+
+                    Add-Finding `
+                    $rule.Name `
+                    $_.Path `
+                    $rule.Risk `
+                    "Running process match"
+
+                }
+            }
+        }
+    }
 }
 
 
-$level="LOW"
+Write-Host ""
+Write-C "============== RESULT ==============" Cyan
+
+Write-C "Files scanned: $($Stats.Files)" Green
+Write-C "Processes checked: $($Stats.Processes)" Green
+Write-C "Findings: $($Results.Count)" Yellow
 
 
-if($Score -ge 90){
-    $level="CRITICAL"
-}
-elseif($Score -ge 70){
-    $level="HIGH"
-}
-elseif($Score -ge 40){
-    $level="MEDIUM"
-}
+if($Results.Count -eq 0){
 
-
-$Global:Results += [PSCustomObject]@{
-
-Name=$Name
-Path=$Path
-Risk=$Score
-Level=$level
-Evidence=$Evidence -join ", "
+    Write-C ""
+    Write-C "No suspicious indicators found." Green
 
 }
+else{
 
+    foreach($r in $Results){
 
+        Write-Host ""
+        Write-C "[$($r.Level)] $($r.Name)" Red
+        Write-C "Risk: $($r.Risk)/100" Yellow
+        Write-C "Path: $($r.Path)" White
+        Write-C "Evidence: $($r.Evidence)" Gray
+    }
 }
 
+$Results | ConvertTo-Json | Out-File "$env:USERPROFILE\Desktop\UltraChecker_Report.json"
 
-# ==========================
-# SIGNATURE CHECK
-# ==========================
+Write-C ""
+Write-C "Report saved to Desktop." Green
+Write-C "Finished." Cyan
 
-
-function Check-Signature {
-
-
-param(
-[string]$Path
-)
-
-
-$name =
-[System.IO.Path]::GetFileName($Path).ToLower()
-
-
-foreach($sig in $Signatures){
-
-
-foreach($word in $sig.Keywords){
-
-
-if($name -like "*$word*"){
-
-
-$score=$sig.Risk
-
-
-$evidence=@(
-"Keyword match: $word"
-)
-
-
-# location bonus
-
-if($Path -match "AppData|Temp|Downloads"){
-    $score+=10
-    $evidence+="Suspicious location"
-}
-
-
-Add-Finding `
-$sig.Name `
-$Path `
-$score `
-$evidence
-
-
-}
-
-
-}
-
-
-}
-
-
-}
-
-
-
-Write-Color ""
-Write-Color "[+] UltraChecker Engine Loaded" Green
-Write-Color "[+] Signature Database: $($Signatures.Count) rules" Cyan
-Write-Color "[+] False Positive Filter: Enabled" Green
-
-Start-Sleep -Milliseconds 800
+Read-Host "Press Enter to exit"
