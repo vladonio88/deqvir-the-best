@@ -1,185 +1,180 @@
 # ==========================================
-# ULTRA CHECKER v20
-# Evidence Based Detection Engine
+# ULTRA CHECKER v20 FINAL
+# Evidence Based Cheat Analyzer
 # ==========================================
 
-$Host.UI.RawUI.WindowTitle = "UltraChecker v20"
-
+$Host.UI.RawUI.WindowTitle = "UltraChecker v20 FINAL"
 Clear-Host
 
-function Write-C($t,$c="White"){ Write-Host $t -ForegroundColor $c }
+function C($t,$c="White"){Write-Host $t -ForegroundColor $c}
 
-function Banner {
-Write-Host @"
-╔══════════════════════════════════════════╗
-║          ULTRA CHECKER v20               ║
-║      Evidence Based Analyzer              ║
-╚══════════════════════════════════════════╝
-"@ -ForegroundColor Cyan
+C @"
+╔══════════════════════════════════════════════╗
+║             ULTRA CHECKER v20 FINAL          ║
+║          Advanced Evidence Analyzer          ║
+╚══════════════════════════════════════════════╝
+"@ Cyan
+
+$Findings=@()
+$Stats=[ordered]@{
+ Files=0
+ Processes=0
+ Checks=0
 }
 
-Banner
-
-$Results = @()
-$Stats = @{
-    Files=0
-    Processes=0
-}
-
-$Rules = @(
-    @{Name="Horion"; Words=@("horion","horioninjector"); Risk=85},
-    @{Name="Vape"; Words=@("vape","vapeclient"); Risk=90},
-    @{Name="LiquidBounce"; Words=@("liquidbounce"); Risk=75},
-    @{Name="Rise Client"; Words=@("riseclient"); Risk=80},
-    @{Name="Injector"; Words=@("injector","loader","mapper"); Risk=45}
+$Rules=@(
+ @{N="Horion";K=@("horion","horioninjector");R=90},
+ @{N="Vape";K=@("vapeclient","vape");R=95},
+ @{N="LiquidBounce";K=@("liquidbounce");R=80},
+ @{N="Rise Client";K=@("riseclient");R=85},
+ @{N="Injector";K=@("injector","mapper","loader");R=55}
 )
 
-$Ignore = @(
-    "Microsoft",
-    "Windows",
-    "NVIDIA",
-    "AMD",
-    "Intel"
+$White=@(
+"Microsoft",
+"Windows",
+"NVIDIA",
+"AMD",
+"Intel",
+"Java",
+"Steam",
+"Mozilla"
 )
 
-function Is-Ignore($Path){
-    foreach($x in $Ignore){
-        if($Path -match $x){return $true}
-    }
-    return $false
+function Ignore($p){
+ foreach($w in $White){
+  if($p -match $w){return $true}
+ }
+ return $false
 }
 
-function Add-Finding($Name,$Path,$Score,$Info){
-    if(Is-Ignore $Path){return}
+function Add-Finding($name,$path,$risk,$why){
+ if(Ignore $path){return}
 
-    $level="LOW"
-    if($Score -ge 90){$level="CRITICAL"}
-    elseif($Score -ge 70){$level="HIGH"}
-    elseif($Score -ge 40){$level="MEDIUM"}
+ $level="LOW"
+ if($risk -ge 90){$level="CRITICAL"}
+ elseif($risk -ge 70){$level="HIGH"}
+ elseif($risk -ge 40){$level="MEDIUM"}
 
-    $script:Results += [PSCustomObject]@{
-        Name=$Name
-        Path=$Path
-        Risk=$Score
-        Level=$level
-        Evidence=$Info
-    }
+ $script:Findings += [PSCustomObject]@{
+  Name=$name
+  Risk=$risk
+  Level=$level
+  Path=$path
+  Evidence=$why
+ }
 }
 
-function Scan-File($File){
+function Analyze($file){
 
-    $Stats.Files++
+ $Stats.Files++
 
-    $name=$File.Name.ToLower()
+ foreach($r in $Rules){
+  foreach($k in $r.K){
 
-    foreach($rule in $Rules){
-        foreach($word in $rule.Words){
+   if($file.Name.ToLower() -like "*$k*"){
 
-            if($name -like "*$word*"){
+    $risk=$r.R
+    $e=@("Signature match: $k")
 
-                $score=$rule.Risk
-                $ev=@("Name match: $word")
-
-                if($File.FullName -match "AppData|Temp|Downloads"){
-                    $score+=10
-                    $ev+="Suspicious location"
-                }
-
-                if($File.Extension -in ".exe",".dll",".jar"){
-                    $score+=5
-                    $ev+="Executable file"
-                }
-
-                Add-Finding $rule.Name $File.FullName $score ($ev -join "; ")
-            }
-        }
+    if($file.FullName -match "AppData|Temp|Downloads"){
+     $risk+=10
+     $e+="Suspicious location"
     }
+
+    if($file.Extension -in ".exe",".dll",".jar"){
+     $risk+=5
+     $e+="Executable type"
+    }
+
+    Add-Finding $r.N $file.FullName $risk ($e -join " | ")
+   }
+  }
+ }
 }
 
-Write-C "[+] Starting scan..." Green
-
-$Folders=@(
-"$env:USERPROFILE\Desktop",
-"$env:USERPROFILE\Downloads",
+$paths=@(
 "$env:APPDATA",
 "$env:LOCALAPPDATA",
+"$env:USERPROFILE\Downloads",
+"$env:USERPROFILE\Desktop",
+"$env:USERPROFILE\.minecraft",
 "C:\ProgramData"
 )
 
-foreach($folder in $Folders){
+C "[1/5] File scanner started" Green
 
-    if(Test-Path $folder){
+foreach($p in $paths){
+ if(Test-Path $p){
+  C "[SCAN] $p" Cyan
 
-        Write-C "[SCAN] $folder" Cyan
-
-        Get-ChildItem $folder -File -Recurse -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.Extension -in ".exe",".dll",".jar"
-        } |
-        ForEach-Object {
-            Scan-File $_
-        }
-    }
+  Get-ChildItem $p -File -Recurse -ErrorAction SilentlyContinue |
+  Where-Object {$_.Extension -in ".exe",".dll",".jar"} |
+  ForEach-Object {Analyze $_}
+ }
 }
 
-Write-C ""
-Write-C "Checking processes..." Cyan
+C "[2/5] Process scanner started" Green
 
 Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+ $Stats.Processes++
 
-    $Stats.Processes++
-
-    if($_.Path){
-
-        foreach($rule in $Rules){
-
-            foreach($word in $rule.Words){
-
-                if($_.Path.ToLower() -like "*$word*"){
-
-                    Add-Finding `
-                    $rule.Name `
-                    $_.Path `
-                    $rule.Risk `
-                    "Running process match"
-
-                }
-            }
-        }
+ try{
+  if($_.Path){
+   foreach($r in $Rules){
+    foreach($k in $r.K){
+     if($_.Path.ToLower() -like "*$k*"){
+      Add-Finding $r.N $_.Path $r.R "Running process match"
+     }
     }
+   }
+  }
+ }catch{}
 }
 
 
-Write-Host ""
-Write-C "============== RESULT ==============" Cyan
+C "[3/5] Registry startup check" Green
 
-Write-C "Files scanned: $($Stats.Files)" Green
-Write-C "Processes checked: $($Stats.Processes)" Green
-Write-C "Findings: $($Results.Count)" Yellow
+$reg=@(
+"HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+"HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+)
 
-
-if($Results.Count -eq 0){
-
-    Write-C ""
-    Write-C "No suspicious indicators found." Green
-
-}
-else{
-
-    foreach($r in $Results){
-
-        Write-Host ""
-        Write-C "[$($r.Level)] $($r.Name)" Red
-        Write-C "Risk: $($r.Risk)/100" Yellow
-        Write-C "Path: $($r.Path)" White
-        Write-C "Evidence: $($r.Evidence)" Gray
+foreach($r in $reg){
+ if(Test-Path $r){
+  Get-ItemProperty $r -ErrorAction SilentlyContinue | Out-String |
+  ForEach-Object {
+   foreach($rule in $Rules){
+    foreach($k in $rule.K){
+     if($_ -match $k){
+      Add-Finding $rule.N $r $rule.R "Startup registry match"
+     }
     }
+   }
+  }
+ }
 }
 
-$Results | ConvertTo-Json | Out-File "$env:USERPROFILE\Desktop\UltraChecker_Report.json"
+C "[4/5] Creating report" Green
 
-Write-C ""
-Write-C "Report saved to Desktop." Green
-Write-C "Finished." Cyan
+$report="$env:USERPROFILE\Desktop\UltraChecker_Report.json"
+$Findings | ConvertTo-Json -Depth 5 | Out-File $report -Encoding UTF8
 
-Read-Host "Press Enter to exit"
+C ""
+C "================ RESULT ================" Cyan
+C "Files scanned: $($Stats.Files)" Green
+C "Processes: $($Stats.Processes)" Green
+C "Detections: $($Findings.Count)" Yellow
+C "Report: $report" Green
+
+foreach($f in $Findings){
+ C ""
+ C "[$($f.Level)] $($f.Name)" Red
+ C "Risk: $($f.Risk)/100" Yellow
+ C "Path: $($f.Path)"
+ C "Evidence: $($f.Evidence)" Gray
+}
+
+C ""
+C "Scan finished." Cyan
+pause
