@@ -1,0 +1,257 @@
+# ==========================================
+#        ULTRA CHEAT SCANNER v20
+#        Advanced Evidence Analyzer
+# ==========================================
+
+$Host.UI.RawUI.WindowTitle = "UltraChecker v20"
+
+Clear-Host
+
+# ==========================
+# COLORS
+# ==========================
+
+function Write-Color($text,$color="White"){
+    Write-Host $text -ForegroundColor $color
+}
+
+function Banner {
+
+Clear-Host
+
+Write-Host "
+╔══════════════════════════════════════════════╗
+║             ULTRA CHECKER v20                ║
+║          Advanced Cheat Analyzer              ║
+║       Evidence Based Detection Engine         ║
+╚══════════════════════════════════════════════╝
+" -ForegroundColor Cyan
+
+}
+
+Banner
+
+
+# ==========================
+# GLOBAL DATA
+# ==========================
+
+$Global:Results = @()
+
+$Global:Stats = @{
+    Files = 0
+    Processes = 0
+    Registry = 0
+    Evidence = 0
+}
+
+
+# ==========================
+# SIGNATURE DATABASE
+# ==========================
+
+$Signatures = @(
+
+@{
+    Name="Horion"
+    Type="Minecraft Client"
+    Keywords=@(
+        "horion",
+        "horion.dll",
+        "horioninjector"
+    )
+    Risk=85
+},
+
+@{
+    Name="Vape"
+    Type="Ghost Client"
+    Keywords=@(
+        "vape",
+        "vapeclient"
+    )
+    Risk=90
+},
+
+@{
+    Name="LiquidBounce"
+    Type="Minecraft Client"
+    Keywords=@(
+        "liquidbounce",
+        "lb"
+    )
+    Risk=75
+},
+
+@{
+    Name="Rise Client"
+    Type="Minecraft Client"
+    Keywords=@(
+        "riseclient",
+        "rise"
+    )
+    Risk=80
+},
+
+@{
+    Name="Generic Injector"
+    Type="Injector"
+    Keywords=@(
+        "injector",
+        "loader",
+        "mapper"
+    )
+    Risk=50
+}
+
+)
+
+
+# ==========================
+# WHITELIST
+# ==========================
+
+$Whitelist=@(
+    "Windows",
+    "Microsoft",
+    "NVIDIA",
+    "AMD",
+    "Intel",
+    "Java",
+    "Minecraft Launcher"
+)
+
+
+function Is-Whitelisted($text){
+
+foreach($item in $Whitelist){
+
+    if($text -like "*$item*"){
+        return $true
+    }
+
+}
+
+return $false
+
+}
+
+
+
+# ==========================
+# RISK ENGINE
+# ==========================
+
+
+function Add-Finding {
+
+
+param(
+[string]$Name,
+[string]$Path,
+[int]$Score,
+[string[]]$Evidence
+)
+
+
+if(Is-Whitelisted $Path){
+    return
+}
+
+
+$level="LOW"
+
+
+if($Score -ge 90){
+    $level="CRITICAL"
+}
+elseif($Score -ge 70){
+    $level="HIGH"
+}
+elseif($Score -ge 40){
+    $level="MEDIUM"
+}
+
+
+$Global:Results += [PSCustomObject]@{
+
+Name=$Name
+Path=$Path
+Risk=$Score
+Level=$level
+Evidence=$Evidence -join ", "
+
+}
+
+
+}
+
+
+# ==========================
+# SIGNATURE CHECK
+# ==========================
+
+
+function Check-Signature {
+
+
+param(
+[string]$Path
+)
+
+
+$name =
+[System.IO.Path]::GetFileName($Path).ToLower()
+
+
+foreach($sig in $Signatures){
+
+
+foreach($word in $sig.Keywords){
+
+
+if($name -like "*$word*"){
+
+
+$score=$sig.Risk
+
+
+$evidence=@(
+"Keyword match: $word"
+)
+
+
+# location bonus
+
+if($Path -match "AppData|Temp|Downloads"){
+    $score+=10
+    $evidence+="Suspicious location"
+}
+
+
+Add-Finding `
+$sig.Name `
+$Path `
+$score `
+$evidence
+
+
+}
+
+
+}
+
+
+}
+
+
+}
+
+
+
+Write-Color ""
+Write-Color "[+] UltraChecker Engine Loaded" Green
+Write-Color "[+] Signature Database: $($Signatures.Count) rules" Cyan
+Write-Color "[+] False Positive Filter: Enabled" Green
+
+Start-Sleep -Milliseconds 800
